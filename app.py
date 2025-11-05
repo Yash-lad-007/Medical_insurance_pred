@@ -1,98 +1,88 @@
 import streamlit as st
 import pandas as pd
+import pickle
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.model_selection import train_test_split
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.naive_bayes import GaussianNB
-from sklearn.linear_model import LogisticRegression, LinearRegression
-from sklearn.tree import DecisionTreeClassifier, plot_tree
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, r2_score
 
-st.set_page_config(page_title="Insurance Data Analysis", layout="wide")
+st.set_page_config(page_title="Insurance Charges Predictor", layout="centered")
 
-st.title("🏥 Insurance Data Analysis and ML Model App")
+st.title("🏥 Insurance Charges Prediction App")
+st.write("Predict medical insurance costs based on user inputs or uploaded data using your trained model.")
 
-# --- Upload or use default dataset ---
-uploaded_file = st.file_uploader("Upload your insurance.csv file", type=["csv"])
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
+# --- Load Trained Model ---
+@st.cache_resource
+def load_model():
+    with open("Best_model (1).pkl", "rb") as file:
+        model = pickle.load(file)
+    return model
+
+model = load_model()
+st.success("✅ Model loaded successfully!")
+
+# --- Sidebar for user input method ---
+st.sidebar.header("Input Options")
+input_method = st.sidebar.radio("How would you like to input data?", ["Manual Entry", "Upload CSV"])
+
+# --- Manual Input Form ---
+def get_user_input():
+    st.subheader("🧾 Enter Details Manually")
+    age = st.number_input("Age", min_value=18, max_value=100, value=30)
+    sex = st.selectbox("Sex", ["male", "female"])
+    bmi = st.number_input("BMI", min_value=10.0, max_value=60.0, value=25.0)
+    children = st.number_input("Number of Children", min_value=0, max_value=5, value=0)
+    smoker = st.selectbox("Smoker", ["yes", "no"])
+    region = st.selectbox("Region", ["southwest", "southeast", "northwest", "northeast"])
+
+    # Convert categorical variables to match training
+    user_data = pd.DataFrame({
+        "age": [age],
+        "sex": [sex],
+        "bmi": [bmi],
+        "children": [children],
+        "smoker": [smoker],
+        "region": [region]
+    })
+
+    # Encode categorical columns similar to training
+    user_data = pd.get_dummies(user_data, drop_first=True)
+    return user_data
+
+# --- Upload CSV Option ---
+def load_uploaded_data(uploaded_file):
+    data = pd.read_csv(uploaded_file)
+    st.write("### Uploaded Data Preview")
+    st.dataframe(data.head())
+    return data
+
+# --- Handle user input ---
+if input_method == "Manual Entry":
+    user_data = get_user_input()
 else:
-    df = pd.read_csv("insurance.csv")
+    uploaded_file = st.file_uploader("Upload your insurance data CSV", type=["csv"])
+    if uploaded_file is not None:
+        user_data = load_uploaded_data(uploaded_file)
+    else:
+        st.warning("Please upload a CSV file.")
+        user_data = None
 
-st.subheader("📋 Dataset Preview")
-st.dataframe(df.head())
+# --- Predict button ---
+if st.button("🔮 Predict Insurance Charges"):
+    if user_data is not None:
+        # Align columns with training model input
+        try:
+            # The model expects specific columns, so handle missing ones
+            model_features = model.feature_names_in_
+            for col in model_features:
+                if col not in user_data.columns:
+                    user_data[col] = 0
+            user_data = user_data[model_features]
 
-# --- EDA Section ---
-st.header("🔍 Exploratory Data Analysis")
+            predictions = model.predict(user_data)
+            st.subheader("💰 Predicted Insurance Charges:")
+            for i, pred in enumerate(predictions):
+                st.write(f"**Person {i+1}:** ₹{pred:,.2f}")
+        except Exception as e:
+            st.error(f"Error while predicting: {e}")
+    else:
+        st.warning("Please provide valid input data before predicting.")
 
-if st.checkbox("Show Summary Statistics"):
-    st.write(df.describe())
-
-if st.checkbox("Show BMI Distribution Plot"):
-    fig, ax = plt.subplots(figsize=(10, 5))
-    sns.histplot(df['bmi'], kde=True, ax=ax)
-    st.pyplot(fig)
-
-if st.checkbox("Show BMI Boxplot"):
-    fig, ax = plt.subplots(figsize=(10, 4))
-    sns.boxplot(x=df['bmi'], ax=ax)
-    st.pyplot(fig)
-
-# --- Outlier Removal ---
-st.header("🚫 Outlier Removal (BMI)")
-Q1 = df['bmi'].quantile(0.25)
-Q3 = df['bmi'].quantile(0.75)
-IQR = Q3 - Q1
-lower_bound = Q1 - 1.5 * IQR
-upper_bound = Q3 + 1.5 * IQR
-
-st.write(f"Lower Bound: {lower_bound:.2f}")
-st.write(f"Upper Bound: {upper_bound:.2f}")
-
-if st.button("Remove Outliers"):
-    before = len(df)
-    df = df[(df['bmi'] >= lower_bound) & (df['bmi'] <= upper_bound)]
-    after = len(df)
-    st.success(f"Removed {before - after} outliers! New dataset size: {after}")
-
-# --- Model Training Section ---
-st.header("🤖 Machine Learning Model")
-
-target_col = st.selectbox("Select Target Column", df.columns)
-X = df.drop(columns=[target_col])
-y = df[target_col]
-
-# Convert categorical columns
-X = pd.get_dummies(X, drop_first=True)
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-model_choice = st.selectbox("Choose Model", ["Logistic Regression", "KNN", "Naive Bayes", "Decision Tree"])
-
-if st.button("Train Model"):
-    if model_choice == "Logistic Regression":
-        model = LogisticRegression(max_iter=1000)
-    elif model_choice == "KNN":
-        model = KNeighborsClassifier()
-    elif model_choice == "Naive Bayes":
-        model = GaussianNB()
-    elif model_choice == "Decision Tree":
-        model = DecisionTreeClassifier()
-
-    model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
-
-    st.subheader("📈 Model Results")
-    st.write("Accuracy:", accuracy_score(y_test, y_pred))
-    st.text("Classification Report:")
-    st.text(classification_report(y_test, y_pred))
-
-    # Optional: visualize tree if decision tree
-    if model_choice == "Decision Tree":
-        fig, ax = plt.subplots(figsize=(12, 6))
-        plot_tree(model, filled=True, fontsize=8)
-        st.pyplot(fig)
-
-st.success("✅ App ready! You can now explore, clean, and model your data interactively.")
+st.info("💡 Tip: You can upload a CSV containing multiple entries to get batch predictions.")
