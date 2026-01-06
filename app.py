@@ -5,7 +5,7 @@ import numpy as np
 
 st.set_page_config(page_title="Insurance Charges Predictor", layout="centered")
 
-st.title("🏥 Insurance Charges Prediction App")
+st.title("🏥 Insurance Charges Prediction App") 
 st.write("Predict medical insurance costs based on user inputs or uploaded data using your trained model.")
 
 # --- Load Trained Model ---
